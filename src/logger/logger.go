@@ -124,7 +124,7 @@ func LogRequest() gin.HandlerFunc {
 			"2": fmt.Sprintf("%dms", time.Since(start).Milliseconds()),
 			"3": c.ClientIP(),
 			"4": c.Request.Method,
-		}).Info(c.Request.URL.Path)
+		}).Info(fmt.Sprintf("%q", c.Request.URL.Path))
 	}
 }
 

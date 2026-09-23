@@ -11,6 +11,7 @@ import (
 const EnvLoginIpKey = "LOGIN_IP"
 const EnvLoginHttpPortKey = "LOGIN_HTTP_PORT"
 const EnvLoginGrpcPortKey = "LOGIN_GRPC_PORT"
+const EnvLoginGrpcIpKey = "LOGIN_GRPC_IP"
 
 const EnvRateLimiterBurstKey = "RATE_LIMITER_BURST"
 const EnvRateLimiterRateKey = "RATE_LIMITER_RATE"
@@ -79,7 +80,8 @@ func (grpcLoginConfigs *GrpcLoginConfigs) Format() string {
 }
 func getGrpcLoginConfigs() GrpcLoginConfigs {
 	return GrpcLoginConfigs{
-		Ip:   GetEnvStr(EnvLoginIpKey, ""),
+		// The only gRPC client is this process's own HTTP handler; exposed, 9090 is an unthrottled login oracle.
+		Ip:   GetEnvStr(EnvLoginGrpcIpKey, "127.0.0.1"),
 		Port: GetEnvInt(EnvLoginGrpcPortKey, 9090),
 	}
 }

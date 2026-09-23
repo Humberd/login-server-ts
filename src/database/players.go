@@ -74,7 +74,7 @@ func LoadPlayers(db *sql.DB, acc *Account) ([]*login_proto_messages.Character, e
 			acc.LastLogin = player.Info.LastLogin
 		}
 
-		if vocation < len(vocations) {
+		if vocation >= 0 && vocation < len(vocations) {
 			player.Info.Vocation = vocations[vocation]
 		}
 

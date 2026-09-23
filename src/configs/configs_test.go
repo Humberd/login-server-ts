@@ -19,6 +19,7 @@ func setGameConfigs() {
 	setEnvKeys(
 		[]string{
 			EnvLoginIpKey,
+			EnvLoginGrpcIpKey,
 			EnvServerIpKey,
 			EnvServerNameKey,
 			EnvServerLocationKey,
@@ -42,6 +43,7 @@ func unsetGameConfigs() {
 	unsetEnvKeys(
 		[]string{
 			EnvLoginIpKey,
+			EnvLoginGrpcIpKey,
 			EnvServerIpKey,
 			EnvServerNameKey,
 			EnvServerLocationKey,
@@ -187,7 +189,7 @@ func TestGetGlobalConfigs(t *testing.T) {
 					Port: 80,
 				},
 				Grpc: GrpcLoginConfigs{
-					Ip:   "",
+					Ip:   "127.0.0.1",
 					Port: 9090,
 				},
 				RateLimiter: RateLimiter{

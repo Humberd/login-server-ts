@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/opentibiabr/login-server/src/api/limiter"
@@ -49,7 +49,11 @@ func Initialize(gConfigs configs.GlobalConfigs) *Api {
 	gin.SetMode(gin.ReleaseMode)
 
 	_api.Router = gin.New()
-	_api.Router.Use(cors.Default())
+	// gin trusts X-Forwarded-For from anyone by default, which lets a client pick its own rate-limit key.
+	if err := _api.Router.SetTrustedProxies(trustedProxies()); err != nil {
+		logger.Error(fmt.Errorf("invalid %s: %v", envTrustedProxiesKey, err))
+		_ = _api.Router.SetTrustedProxies(nil)
+	}
 	_api.Router.Use(logger.LogRequest())
 	_api.Router.Use(gin.Recovery())
 	_api.Router.Use(ipLimiter.Limit())
@@ -91,7 +95,16 @@ func Initialize(gConfigs configs.GlobalConfigs) *Api {
 }
 
 func (_api *Api) Run(gConfigs configs.GlobalConfigs) error {
-	err := http.ListenAndServe(gConfigs.LoginServerConfigs.Http.Format(), _api.Router)
+	srv := &http.Server{
+		Addr:              gConfigs.LoginServerConfigs.Http.Format(),
+		Handler:           _api.Router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    16 << 10,
+	}
+	err := srv.ListenAndServe()
 
 	/* Make sure we free the reverse proxy connection */
 	if _api.GrpcConnection != nil {
@@ -104,13 +117,36 @@ func (_api *Api) Run(gConfigs configs.GlobalConfigs) error {
 	return err
 }
 
+const envTrustedProxiesKey = "LOGIN_TRUSTED_PROXIES"
+const maxLoginBodyBytes = 16 << 10
+
+func trustedProxies() []string {
+	var proxies []string
+	for _, p := range strings.Split(configs.GetEnvStr(envTrustedProxiesKey, ""), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			proxies = append(proxies, p)
+		}
+	}
+	return proxies
+}
+
+func limitBody(n int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, n)
+		}
+		c.Next()
+	}
+}
+
 func (_api *Api) GetName() string {
 	return "api"
 }
 
 func (_api *Api) initializeRoutes() {
-	_api.Router.POST("/", _api.login)
-	_api.Router.POST("/login", _api.login)
-	_api.Router.POST("/login.php", _api.login)
+	login := []gin.HandlerFunc{limitBody(maxLoginBodyBytes), _api.login}
+	_api.Router.POST("/", login...)
+	_api.Router.POST("/login", login...)
+	_api.Router.POST("/login.php", login...)
 	_api.Router.POST("/crash-report", _api.crashReport)
 }

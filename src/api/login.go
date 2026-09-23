@@ -19,7 +19,7 @@ const temporaryErrorMessage = "Internal error. Please try again later or contact
 func (_api *Api) login(c *gin.Context) {
 	var payload models.RequestPayload
 	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
 		return
 	}
 

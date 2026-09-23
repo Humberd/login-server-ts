@@ -113,7 +113,7 @@ func TestGetLoginServerConfigs(t *testing.T) {
 				Port: 80,
 			},
 			Grpc: GrpcLoginConfigs{
-				Ip:   "",
+				Ip:   "127.0.0.1",
 				Port: 9090,
 			},
 			RateLimiter: RateLimiter{
@@ -154,7 +154,7 @@ func TestGetGrpcLoginConfigs(t *testing.T) {
 	}{{
 		name: "Default Grpc Configs",
 		want: GrpcLoginConfigs{
-			Ip:   "",
+			Ip:   "127.0.0.1",
 			Port: 9090,
 		},
 	}}
