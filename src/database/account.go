@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha1"
 	"crypto/sha256"
 	"database/sql"
 	"database/sql/driver"
@@ -15,6 +14,8 @@ import (
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/opentibiabr/login-server/src/grpc/login_proto_messages"
+	"github.com/opentibiabr/login-server/src/logger"
+	"github.com/opentibiabr/login-server/src/password"
 	"github.com/opentibiabr/login-server/src/serviceerrors"
 )
 
@@ -44,20 +45,60 @@ func (acc *Account) Authenticate(db *sql.DB) error {
 		)
 	}
 
-	h := sha1.New()
-	h.Write([]byte(acc.Password))
-
-	p := h.Sum(nil)
-	passwordHash := fmt.Sprintf("%x", p)
-
-	statement := "SELECT id, type, premdays, lastday FROM accounts WHERE (email = ? OR name = ?) AND password = ?"
-
-	err := db.QueryRow(statement, acc.Email, acc.Email, passwordHash).Scan(&acc.ID, &acc.Type, &acc.PremDays, &acc.LastDay)
+	rows, err := db.Query("SELECT id, type, premdays, lastday, password FROM accounts WHERE email = ? OR name = ?", acc.Email, acc.Email)
 	if err != nil {
 		return err
 	}
+	var candidates []accountRow
+	for rows.Next() {
+		var row accountRow
+		if err := rows.Scan(&row.id, &row.accountType, &row.premDays, &row.lastDay, &row.hash); err != nil {
+			rows.Close()
+			return err
+		}
+		candidates = append(candidates, row)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
 
-	return nil
+	if len(candidates) == 0 {
+		password.Burn(acc.Password)
+		return sql.ErrNoRows
+	}
+
+	for _, row := range candidates {
+		switch password.Verify(acc.Password, row.hash) {
+		case password.Match:
+		case password.MatchLegacy:
+			upgradePasswordHash(db, row.id, row.hash, acc.Password)
+		default:
+			continue
+		}
+		acc.ID, acc.Type, acc.PremDays, acc.LastDay = row.id, row.accountType, row.premDays, row.lastDay
+		return nil
+	}
+
+	return sql.ErrNoRows
+}
+
+type accountRow struct {
+	id, accountType, premDays, lastDay uint32
+	hash                               string
+}
+
+func upgradePasswordHash(db *sql.DB, id uint32, legacyHash, plain string) {
+	hash, err := password.Hash(plain)
+	if err != nil {
+		logger.Warn(fmt.Sprintf("account %d: argon2id password upgrade failed: %v", id, err))
+		return
+	}
+	if _, err := db.Exec("UPDATE accounts SET password = ? WHERE id = ? AND password = ?", hash, id, legacyHash); err != nil {
+		logger.Warn(fmt.Sprintf("account %d: argon2id password upgrade failed: %v", id, err))
+	}
 }
 
 func (acc *Account) GetGrpcSession(sessionKey string) *login_proto_messages.Session {
