@@ -1,7 +1,7 @@
 ---
 # Builds docker/Dockerfile and pushes it to the prod-infra registry, where
-# apps/ots-dungeon runs it as the login server. Manual, like canary-ts's: deploying
-# is a separate step (npm run deploy:ots-dungeon in prod-infra) either way.
+# apps/ots-dungeons runs it as the login server. Manual, like canary-ts's: deploying
+# is a separate step (npm run deploy:ots-dungeons in prod-infra) either way.
 #
 # Repository secrets: REGISTRY_USER, REGISTRY_PASSWORD (prod-infra vault,
 # infra.registry.*).
@@ -19,7 +19,7 @@ permissions:
 
 env:
   REGISTRY: registry.node01.serversky.pl
-  IMAGE_NAME: ots-dungeon-login-server
+  IMAGE_NAME: ots-dungeons-login-server
 
 jobs:
   build-and-push:
