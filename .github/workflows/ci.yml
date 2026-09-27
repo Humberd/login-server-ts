@@ -15,21 +15,6 @@ on:
       - "sonar-project.properties"
       - ".github/workflows/**"
       - ".github/scripts/**"
-  push:
-    branches:
-      - main
-      - master
-      - develop
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "docker/**"
-      - "go.mod"
-      - "go.sum"
-      - "GitVersion.yml"
-      - "sonar-project.properties"
-      - ".github/workflows/**"
-      - ".github/scripts/**"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
