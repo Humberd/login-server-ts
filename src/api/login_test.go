@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opentibiabr/login-server/src/api/models"
@@ -20,6 +19,7 @@ import (
 	"github.com/opentibiabr/login-server/src/serviceerrors"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -292,17 +292,13 @@ func newInMemoryLoginClient(t *testing.T, response *login_proto_messages.LoginRe
 		_ = grpcServer.Serve(listener)
 	}()
 
-	dialCtx, dialCancel := context.WithTimeout(context.Background(), time.Second)
-	conn, err := grpc.DialContext(
-		dialCtx,
-		"bufnet",
+	conn, err := grpc.NewClient(
+		"passthrough:///bufnet",
 		grpc.WithContextDialer(func(_ context.Context, _ string) (net.Conn, error) {
 			return listener.Dial()
 		}),
-		grpc.WithInsecure(),
-		grpc.WithBlock(),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
-	dialCancel()
 	if err != nil {
 		t.Fatalf("failed to create grpc client connection: %v", err)
 	}

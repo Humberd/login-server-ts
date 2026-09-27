@@ -12,11 +12,11 @@ var funcs = map[string]interface{}{
 
 func FromProtoConvertor(proto interface{}, to interface{}) interface{} {
 	protoRef := reflect.ValueOf(proto)
-	if protoRef.Kind() == reflect.Ptr && protoRef.Elem().Kind() == reflect.Struct {
+	if protoRef.Kind() == reflect.Pointer && protoRef.Elem().Kind() == reflect.Struct {
 		protoRef = protoRef.Elem()
 	}
 	toRef := reflect.ValueOf(to)
-	if toRef.Kind() == reflect.Ptr && toRef.Elem().Kind() == reflect.Struct {
+	if toRef.Kind() == reflect.Pointer && toRef.Elem().Kind() == reflect.Struct {
 		toRef = toRef.Elem()
 	}
 
@@ -44,11 +44,11 @@ func FromProtoConvertor(proto interface{}, to interface{}) interface{} {
 
 func ToProtoConvertor(from interface{}, proto interface{}) interface{} {
 	fromRef := reflect.ValueOf(from)
-	if fromRef.Kind() == reflect.Ptr && fromRef.Elem().Kind() == reflect.Struct {
+	if fromRef.Kind() == reflect.Pointer && fromRef.Elem().Kind() == reflect.Struct {
 		fromRef = fromRef.Elem()
 	}
 	protoRef := reflect.ValueOf(proto)
-	if protoRef.Kind() == reflect.Ptr && protoRef.Elem().Kind() == reflect.Struct {
+	if protoRef.Kind() == reflect.Pointer && protoRef.Elem().Kind() == reflect.Struct {
 		protoRef = protoRef.Elem()
 	}
 

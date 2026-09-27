@@ -7,6 +7,7 @@ import (
 	"github.com/opentibiabr/login-server/src/grpc/login_proto_messages"
 	"github.com/opentibiabr/login-server/src/logger"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"net/http"
 	"sync"
@@ -74,7 +75,7 @@ func BenchmarkTcp(b *testing.B) {
 		return
 	}
 
-	conn, err := grpc.Dial(":7171", grpc.WithInsecure())
+	conn, err := grpc.NewClient("passthrough:///:7171", grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		logger.Error(errors.New("Couldn't start GRPC reverse proxy."))
 	}

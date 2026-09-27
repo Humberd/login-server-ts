@@ -19,6 +19,7 @@ import (
 	"github.com/opentibiabr/login-server/src/logger"
 	"github.com/opentibiabr/login-server/src/server"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Api struct {
@@ -88,7 +89,7 @@ func Initialize(gConfigs configs.GlobalConfigs) *Api {
 
 	/* Generate HTTP/GRPC reverse proxy */
 
-	_api.GrpcConnection, err = grpc.Dial(gConfigs.LoginServerConfigs.Grpc.Format(), grpc.WithInsecure())
+	_api.GrpcConnection, err = grpc.NewClient("passthrough:///"+gConfigs.LoginServerConfigs.Grpc.Format(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		logger.Error(errors.New("couldn't start GRPC reverse proxy server, check if the login server is running and the GRPC port is open"))
 	}
