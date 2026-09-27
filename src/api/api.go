@@ -49,6 +49,8 @@ func Initialize(gConfigs configs.GlobalConfigs) *Api {
 	gin.SetMode(gin.ReleaseMode)
 
 	_api.Router = gin.New()
+	// Before Use(): gin binds middleware at registration, so the 30 s container probe skips the access log and rate limiter.
+	_api.Router.GET("/health", _api.health)
 	// gin trusts X-Forwarded-For from anyone by default, which lets a client pick its own rate-limit key.
 	if err := _api.Router.SetTrustedProxies(trustedProxies()); err != nil {
 		logger.Error(fmt.Errorf("invalid %s: %v", envTrustedProxiesKey, err))
