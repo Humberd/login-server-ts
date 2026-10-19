@@ -3,6 +3,7 @@ package serviceerrors
 import (
 	"errors"
 	"fmt"
+	"time"
 )
 
 const (
@@ -13,6 +14,7 @@ const (
 	// 4000-4999: game data/configuration availability errors.
 	// New codes should use the next free value in the matching range.
 	CodeInvalidCredentials        = 3
+	CodeTooManyLoginAttempts      = 4
 	CodeDatabaseUnavailable       = 2001
 	CodeAccountDataUnavailable    = 2002
 	CodeCharacterListLoadFailed   = 2003
@@ -67,6 +69,10 @@ func MessageWithHint(err *PublicError) string {
 
 func InvalidCredentials() *PublicError {
 	return New(CodeInvalidCredentials, "INVALID_CREDENTIALS", invalidCredentialsMessage, nil)
+}
+
+func TooManyLoginAttempts(wait time.Duration) *PublicError {
+	return New(CodeTooManyLoginAttempts, "TOO_MANY_LOGIN_ATTEMPTS", fmt.Sprintf("Too many failed login attempts. Please try again in %d minutes.", int(wait.Minutes())), nil)
 }
 
 func LoginServiceBusy() *PublicError {

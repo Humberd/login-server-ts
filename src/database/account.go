@@ -9,10 +9,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
+	"github.com/opentibiabr/login-server/src/api/limiter"
 	"github.com/opentibiabr/login-server/src/grpc/login_proto_messages"
 	"github.com/opentibiabr/login-server/src/logger"
 	"github.com/opentibiabr/login-server/src/password"
@@ -33,6 +35,10 @@ const accountTypeGameMaster = 4
 const secondsInADay = 24 * 60 * 60
 const sessionDuration = 24 * time.Hour
 const sessionPersistenceTimeout = 3 * time.Second
+const maxLoginFailures = 10
+const loginFailureWindow = 15 * time.Minute
+
+var loginFailures = limiter.NewFailureLimiter(maxLoginFailures, loginFailureWindow)
 
 var ErrAccountSessionStorageUnavailable = errors.New("account session persistence unavailable")
 
@@ -65,6 +71,13 @@ func (acc *Account) Authenticate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	failureKeys := loginFailureKeys(acc.Email, candidates)
+	for _, key := range failureKeys {
+		if loginFailures.Blocked(key) {
+			return serviceerrors.TooManyLoginAttempts(loginFailureWindow)
+		}
+	}
+
 	release, err := password.Acquire(ctx)
 	if err != nil {
 		return serviceerrors.LoginServiceBusy()
@@ -73,6 +86,7 @@ func (acc *Account) Authenticate(ctx context.Context, db *sql.DB) error {
 
 	if len(candidates) == 0 {
 		password.Burn(acc.Password)
+		loginFailures.Fail(failureKeys...)
 		return sql.ErrNoRows
 	}
 
@@ -84,11 +98,30 @@ func (acc *Account) Authenticate(ctx context.Context, db *sql.DB) error {
 		default:
 			continue
 		}
+		loginFailures.Reset(accountFailureKey(row.id))
 		acc.ID, acc.Type, acc.PremDays, acc.LastDay = row.id, row.accountType, row.premDays, row.lastDay
 		return nil
 	}
 
+	loginFailures.Fail(failureKeys...)
 	return sql.ErrNoRows
+}
+
+// The accounts collation ignores case and accents, so every spelling that reaches an account shares its id's bucket.
+func loginFailureKeys(login string, candidates []accountRow) []string {
+	if len(candidates) == 0 {
+		sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(login))))
+		return []string{"login:" + string(sum[:])}
+	}
+	keys := make([]string, len(candidates))
+	for i, row := range candidates {
+		keys[i] = accountFailureKey(row.id)
+	}
+	return keys
+}
+
+func accountFailureKey(id uint32) string {
+	return "account:" + strconv.FormatUint(uint64(id), 10)
 }
 
 type accountRow struct {

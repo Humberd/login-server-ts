@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/opentibiabr/login-server/src/api/limiter"
 	"github.com/opentibiabr/login-server/src/password"
 	"github.com/opentibiabr/login-server/src/serviceerrors"
 	"github.com/stretchr/testify/assert"
@@ -40,6 +41,7 @@ func expectAccountQuery(mock sqlmock.Sqlmock, login string) *sqlmock.ExpectedQue
 }
 
 func newMockDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
+	loginFailures = limiter.NewFailureLimiter(maxLoginFailures, loginFailureWindow)
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -167,4 +169,55 @@ func TestLoadAccount_BusyWhenHashSlotsAreTaken(t *testing.T) {
 	publicErr, ok := serviceerrors.FromError(err)
 	require.True(t, ok)
 	assert.Equal(t, serviceerrors.CodeLoginServiceBusy, publicErr.Code)
+}
+
+func assertTooManyLoginAttempts(t *testing.T, err error) {
+	publicErr, ok := serviceerrors.FromError(err)
+	require.True(t, ok)
+	assert.Equal(t, serviceerrors.CodeTooManyLoginAttempts, publicErr.Code)
+}
+
+func TestLoadAccount_LocksAccountAfterRepeatedFailures(t *testing.T) {
+	db, mock := newMockDB(t)
+	for range maxLoginFailures {
+		expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
+		_, err := LoadAccount(context.Background(), "tester", "wrong", db)
+		assertInvalidCredentials(t, err)
+	}
+
+	expectAccountQuery(mock, "TÉSTER").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
+	acc, err := LoadAccount(context.Background(), "TÉSTER", "test", db)
+
+	assert.Nil(t, acc)
+	assertTooManyLoginAttempts(t, err)
+}
+
+func TestLoadAccount_SuccessResetsFailures(t *testing.T) {
+	db, mock := newMockDB(t)
+	for range maxLoginFailures - 1 {
+		expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
+		_, err := LoadAccount(context.Background(), "tester", "wrong", db)
+		assertInvalidCredentials(t, err)
+	}
+	expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
+	_, err := LoadAccount(context.Background(), "tester", "test", db)
+	require.NoError(t, err)
+
+	expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
+	_, err = LoadAccount(context.Background(), "tester", "wrong", db)
+	assertInvalidCredentials(t, err)
+}
+
+func TestLoadAccount_LocksUnknownLoginLikeAnAccount(t *testing.T) {
+	db, mock := newMockDB(t)
+	for range maxLoginFailures {
+		expectAccountQuery(mock, "nobody").WillReturnRows(accountRows())
+		_, err := LoadAccount(context.Background(), "nobody", "test", db)
+		assertInvalidCredentials(t, err)
+	}
+
+	expectAccountQuery(mock, " NoBody ").WillReturnRows(accountRows())
+	_, err := LoadAccount(context.Background(), " NoBody ", "test", db)
+
+	assertTooManyLoginAttempts(t, err)
 }
