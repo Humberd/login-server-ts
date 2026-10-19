@@ -8,9 +8,6 @@ import (
 	"github.com/opentibiabr/login-server/src/logger"
 )
 
-// MariaDB's default max_connections (151) is shared with canary and MyAAC.
-const DefaultMaxDbOpenConns = 10
-const DefaultMaxDbIdleConns = 5
 const DefaultDbConnMaxLifetime = 3 * time.Minute
 
 func PullConnection(gConfigs configs.GlobalConfigs) *sql.DB {
@@ -19,8 +16,13 @@ func PullConnection(gConfigs configs.GlobalConfigs) *sql.DB {
 		logger.Panic(err)
 	}
 
-	DB.SetMaxOpenConns(DefaultMaxDbOpenConns)
-	DB.SetMaxIdleConns(DefaultMaxDbIdleConns)
+	maxOpen := gConfigs.DBConfigs.MaxOpenConns
+	// 0 would mean unlimited to database/sql.
+	if maxOpen <= 0 {
+		maxOpen = configs.DefaultDBMaxOpenConns
+	}
+	DB.SetMaxOpenConns(maxOpen)
+	DB.SetMaxIdleConns(gConfigs.DBConfigs.MaxIdleConns)
 	DB.SetConnMaxLifetime(DefaultDbConnMaxLifetime)
 
 	return DB

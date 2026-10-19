@@ -43,6 +43,8 @@ You can also download our docker image and apply the environment variables to yo
 |`MYSQL_PORT`         | `database port`                      |
 |`MYSQL_PASS`         | `database password`                  |
 |`MYSQL_USER`         | `database username`                  |
+|`MYSQL_MAX_OPEN_CONNS`| `database pool size, default 10`    |
+|`MYSQL_MAX_IDLE_CONNS`| `idle database connections kept, default 5` |
 |`ENV_LOG_LEVEL`      | `logrus log level for verbose` [ref](https://pkg.go.dev/github.com/sirupsen/logrus#Level)   |
 |`ENV_LOG_FILE`       | `optional extra log file path (not rotated); unset logs to stdout only` |
 |`LOGIN_IP`           | `login ip address`                   |
