@@ -20,11 +20,13 @@ const (
 	CodeSessionCreateFailed       = 2005
 	CodeLoginServiceUnavailable   = 3001
 	CodeUnsupportedRequestType    = 3002
+	CodeLoginServiceBusy          = 3003
 	CodeEventScheduleUnavailable  = 4001
 	CodeBoostedDataUnavailable    = 4002
 )
 
 const invalidCredentialsMessage = "Account email or password is not correct."
+const loginServiceBusyMessage = "The login server is busy. Please try again in a moment."
 
 type PublicError struct {
 	Code    int
@@ -65,6 +67,10 @@ func MessageWithHint(err *PublicError) string {
 
 func InvalidCredentials() *PublicError {
 	return New(CodeInvalidCredentials, "INVALID_CREDENTIALS", invalidCredentialsMessage, nil)
+}
+
+func LoginServiceBusy() *PublicError {
+	return New(CodeLoginServiceBusy, "LOGIN_SERVICE_BUSY", loginServiceBusyMessage, nil)
 }
 
 func LoginService(code int, name string, cause error) *PublicError {

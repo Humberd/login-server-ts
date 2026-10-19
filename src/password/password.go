@@ -1,14 +1,17 @@
 package password
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -30,7 +33,27 @@ const (
 	maxKeyLen     = 64
 
 	prefix = "$argon2id$"
+
+	// Each run allocates its whole 19 MiB block array up front; the prod container has 128 MiB.
+	maxConcurrentHashes = 2
+	maxHashWait         = 2 * time.Second
 )
+
+var ErrBusy = errors.New("too many password checks in flight")
+
+var hashSlots = make(chan struct{}, maxConcurrentHashes)
+
+// Acquire takes one argon2id slot; a login holds it for all of its sequential runs.
+func Acquire(ctx context.Context) (func(), error) {
+	ctx, cancel := context.WithTimeout(ctx, maxHashWait)
+	defer cancel()
+	select {
+	case hashSlots <- struct{}{}:
+		return func() { <-hashSlots }, nil
+	case <-ctx.Done():
+		return nil, ErrBusy
+	}
+}
 
 type Result int
 

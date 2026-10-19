@@ -1,8 +1,10 @@
 package password
 
 import (
+	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -76,5 +78,27 @@ func TestVerifyRejectsParamsOutOfBounds(t *testing.T) {
 		_, ok := parse(stored)
 		assert.False(t, ok, stored)
 		assert.Equal(t, Mismatch, Verify("test", stored), stored)
+	}
+}
+
+func TestAcquireBoundsConcurrentHashes(t *testing.T) {
+	var releases []func()
+	for range maxConcurrentHashes {
+		release, err := Acquire(context.Background())
+		require.NoError(t, err)
+		releases = append(releases, release)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := Acquire(ctx)
+	assert.ErrorIs(t, err, ErrBusy)
+
+	releases[0]()
+	release, err := Acquire(context.Background())
+	require.NoError(t, err)
+	release()
+	for _, release := range releases[1:] {
+		release()
 	}
 }

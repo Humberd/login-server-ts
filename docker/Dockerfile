@@ -17,5 +17,8 @@ RUN mkdir -p /app/logs && chown -R 65532:65532 /app
 WORKDIR /app
 USER 65532:65532
 
+# Leaves the 128 MiB prod container room for two concurrent 19 MiB argon2id runs plus GC headroom.
+ENV GOMEMLIMIT=80MiB
+
 ENTRYPOINT ["/bin/login-server"]
 

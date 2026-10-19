@@ -36,7 +36,7 @@ const sessionPersistenceTimeout = 3 * time.Second
 
 var ErrAccountSessionStorageUnavailable = errors.New("account session persistence unavailable")
 
-func (acc *Account) Authenticate(db *sql.DB) error {
+func (acc *Account) Authenticate(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return serviceerrors.LoginService(
 			serviceerrors.CodeDatabaseUnavailable,
@@ -45,7 +45,7 @@ func (acc *Account) Authenticate(db *sql.DB) error {
 		)
 	}
 
-	rows, err := db.Query("SELECT id, type, premdays, lastday, password FROM accounts WHERE email = ? OR name = ?", acc.Email, acc.Email)
+	rows, err := db.QueryContext(ctx, "SELECT id, type, premdays, lastday, password FROM accounts WHERE email = ? OR name = ?", acc.Email, acc.Email)
 	if err != nil {
 		return err
 	}
@@ -64,6 +64,12 @@ func (acc *Account) Authenticate(db *sql.DB) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
+
+	release, err := password.Acquire(ctx)
+	if err != nil {
+		return serviceerrors.LoginServiceBusy()
+	}
+	defer release()
 
 	if len(candidates) == 0 {
 		password.Burn(acc.Password)
@@ -181,9 +187,9 @@ func (acc *Account) GetPremiumTime() uint64 {
 	return 0
 }
 
-func LoadAccount(email string, password string, DB *sql.DB) (*Account, error) {
+func LoadAccount(ctx context.Context, email string, password string, DB *sql.DB) (*Account, error) {
 	acc := Account{Email: email, Password: password}
-	if err := acc.Authenticate(DB); err != nil {
+	if err := acc.Authenticate(ctx, DB); err != nil {
 		return nil, classifyAuthenticationError(err)
 	}
 
