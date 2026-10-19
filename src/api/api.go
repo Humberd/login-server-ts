@@ -15,7 +15,6 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/opentibiabr/login-server/src/api/limiter"
 	"github.com/opentibiabr/login-server/src/configs"
-	"github.com/opentibiabr/login-server/src/database"
 	"github.com/opentibiabr/login-server/src/logger"
 	"github.com/opentibiabr/login-server/src/server"
 	"google.golang.org/grpc"
@@ -34,11 +33,11 @@ type Api struct {
 	LuaConfigManager  *configs.LuaConfigManager
 }
 
-func Initialize(gConfigs configs.GlobalConfigs) *Api {
+func Initialize(gConfigs configs.GlobalConfigs, db *sql.DB) *Api {
 	var _api Api
 	var err error
 
-	_api.DB = database.PullConnection(gConfigs)
+	_api.DB = db
 
 	ipLimiter := &limiter.IPRateLimiter{
 		Visitors: make(map[string]*limiter.Visitor),

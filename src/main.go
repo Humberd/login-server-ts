@@ -7,6 +7,7 @@ import (
 
 	"github.com/opentibiabr/login-server/src/api"
 	"github.com/opentibiabr/login-server/src/configs"
+	"github.com/opentibiabr/login-server/src/database"
 	grpc_login_server "github.com/opentibiabr/login-server/src/grpc"
 	"github.com/opentibiabr/login-server/src/logger"
 	"github.com/opentibiabr/login-server/src/server"
@@ -28,9 +29,10 @@ func main() {
 	}
 
 	gConfigs := configs.GetGlobalConfigs()
+	db := database.PullConnection(gConfigs)
 
-	go startServer(&wg, gConfigs, grpc_login_server.Initialize(gConfigs))
-	go startServer(&wg, gConfigs, api.Initialize(gConfigs))
+	go startServer(&wg, gConfigs, grpc_login_server.Initialize(db))
+	go startServer(&wg, gConfigs, api.Initialize(gConfigs, db))
 
 	time.Sleep(time.Duration(initDelay) * time.Millisecond)
 	gConfigs.Display()

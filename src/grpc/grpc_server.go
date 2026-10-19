@@ -5,7 +5,6 @@ import (
 	"net"
 
 	"github.com/opentibiabr/login-server/src/configs"
-	"github.com/opentibiabr/login-server/src/database"
 	"github.com/opentibiabr/login-server/src/grpc/login_proto_messages"
 	"github.com/opentibiabr/login-server/src/server"
 	"google.golang.org/grpc"
@@ -17,12 +16,8 @@ type GrpcServer struct {
 	server.ServerInterface
 }
 
-func Initialize(gConfigs configs.GlobalConfigs) *GrpcServer {
-	var ls GrpcServer
-
-	ls.DB = database.PullConnection(gConfigs)
-
-	return &ls
+func Initialize(db *sql.DB) *GrpcServer {
+	return &GrpcServer{DB: db}
 }
 
 func (ls *GrpcServer) Run(gConfigs configs.GlobalConfigs) error {
