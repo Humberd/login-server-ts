@@ -1,12 +1,15 @@
 package limiter
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opentibiabr/login-server/src/configs"
+	"github.com/opentibiabr/login-server/src/logger"
 
 	"golang.org/x/time/rate"
 )
@@ -15,6 +18,7 @@ type IPRateLimiter struct {
 	Visitors map[string]*Visitor
 	Mu       *sync.RWMutex
 	Configs  configs.RateLimiter
+	rejected atomic.Int64
 }
 
 type Visitor struct {
@@ -46,6 +50,10 @@ func (rl *IPRateLimiter) cleanupVisitors() {
 	for {
 		time.Sleep(time.Minute)
 
+		if n := rl.rejected.Swap(0); n > 0 {
+			logger.Warn(fmt.Sprintf("rate limiter rejected %d requests in the last minute", n))
+		}
+
 		rl.Mu.Lock()
 		for ip, v := range rl.Visitors {
 			if time.Since(v.LastSeen) > 3*time.Minute {
@@ -62,7 +70,9 @@ func (rl *IPRateLimiter) Limit() gin.HandlerFunc {
 
 		limiter := rl.getVisitor(ip)
 		if !limiter.Allow() {
+			rl.rejected.Add(1)
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "too many requests"})
+			return
 		}
 		c.Next()
 	}

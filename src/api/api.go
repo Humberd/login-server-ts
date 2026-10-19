@@ -57,9 +57,10 @@ func Initialize(gConfigs configs.GlobalConfigs) *Api {
 		logger.Error(fmt.Errorf("invalid %s: %v", envTrustedProxiesKey, err))
 		_ = _api.Router.SetTrustedProxies(nil)
 	}
+	// Ahead of the access log so a flood is not written line by line; the limiter logs a per-minute count instead.
+	_api.Router.Use(ipLimiter.Limit())
 	_api.Router.Use(logger.LogRequest())
 	_api.Router.Use(gin.Recovery())
-	_api.Router.Use(ipLimiter.Limit())
 	_api.ServerPath = strings.TrimSpace(configs.GetEnvStr("SERVER_PATH", ""))
 	if _api.ServerPath != "" {
 		configPath := filepath.Join(_api.ServerPath, "config.lua")

@@ -110,9 +110,5 @@ func GetLogLevel() logrus.Level {
 }
 
 func GetLogFile() string {
-	if value, exists := os.LookupEnv(EnvLogFile); exists {
-		return value
-	}
-
-	return "logs/login-server.txt"
+	return os.Getenv(EnvLogFile)
 }

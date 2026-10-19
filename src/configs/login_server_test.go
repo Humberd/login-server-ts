@@ -87,7 +87,7 @@ func TestGetLogFile(t *testing.T) {
 			assert.NoError(t, os.Unsetenv(EnvLogFile))
 		})
 
-		assert.Equal(t, "logs/login-server.txt", GetLogFile())
+		assert.Equal(t, "", GetLogFile())
 	})
 
 	t.Run("uses configured path", func(t *testing.T) {
