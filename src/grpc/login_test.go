@@ -3,6 +3,7 @@ package grpc_login_server
 import (
 	"context"
 	"errors"
+	"net"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -11,6 +12,8 @@ import (
 	"github.com/opentibiabr/login-server/src/database"
 	"github.com/opentibiabr/login-server/src/serviceerrors"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 )
 
 func TestLoginReturnsConfigurationErrorWhenServerNameMismatches(t *testing.T) {
@@ -163,4 +166,19 @@ func livestreamCasterColumns() []string {
 		"lookaddons",
 		"lastlogin",
 	}
+}
+
+func TestSourceIP(t *testing.T) {
+	from := func(ip string) context.Context {
+		return peer.NewContext(context.Background(), &peer.Peer{Addr: &net.TCPAddr{IP: net.ParseIP(ip), Port: 50000}})
+	}
+	forwarded := func(ctx context.Context) context.Context {
+		return metadata.NewIncomingContext(ctx, metadata.Pairs(ClientIPMetadataKey, "203.0.113.7"))
+	}
+
+	assert.Equal(t, "203.0.113.7", sourceIP(forwarded(from("127.0.0.1"))))
+	assert.Equal(t, "203.0.113.7", sourceIP(forwarded(from("::1"))))
+	assert.Equal(t, "198.51.100.2", sourceIP(forwarded(from("198.51.100.2"))), "a remote caller cannot pick its own key")
+	assert.Equal(t, "127.0.0.1", sourceIP(from("127.0.0.1")))
+	assert.Equal(t, "", sourceIP(context.Background()))
 }

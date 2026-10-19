@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 
 	"github.com/opentibiabr/login-server/src/api/models"
 	"github.com/opentibiabr/login-server/src/configs"
@@ -12,18 +13,21 @@ import (
 	"github.com/opentibiabr/login-server/src/logger"
 	"github.com/opentibiabr/login-server/src/serviceerrors"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 )
 
 const DefaultLoginErrorCode = 3
 const configurationErrorMessage = "Game world configuration error. Please contact support. Error: %s (LS-%d)."
 const livestreamUnavailableMessage = "No active livestream casters found, or livestream login is disabled."
+const ClientIPMetadataKey = "x-client-ip"
 
 func (ls *GrpcServer) Login(ctx context.Context, in *login_proto_messages.LoginRequest) (*login_proto_messages.LoginResponse, error) {
 	if database.IsLivestreamLogin(in.Email) {
 		return ls.loginLivestream(ctx, in.Password)
 	}
 
-	acc, err := database.LoadAccount(ctx, in.Email, in.Password, ls.DB)
+	acc, err := database.LoadAccount(ctx, in.Email, in.Password, sourceIP(ctx), ls.DB)
 	if err != nil {
 		return buildLoginErrorResponse(err, false), nil
 	}
@@ -58,6 +62,26 @@ func (ls *GrpcServer) Login(ctx context.Context, in *login_proto_messages.LoginR
 	}).Debug("processed")
 
 	return &res, nil
+}
+
+// Only the local HTTP half may name the client; a remote gRPC caller is keyed by its own address.
+func sourceIP(ctx context.Context) string {
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr == nil {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(p.Addr.String())
+	if err != nil {
+		host = p.Addr.String()
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if forwarded := md.Get(ClientIPMetadataKey); len(forwarded) > 0 && forwarded[0] != "" {
+				return forwarded[0]
+			}
+		}
+	}
+	return host
 }
 
 func buildLoginErrorResponse(err error, includeAdminHint bool) *login_proto_messages.LoginResponse {

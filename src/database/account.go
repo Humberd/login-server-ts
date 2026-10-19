@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ var loginFailures = limiter.NewFailureLimiter(maxLoginFailures, loginFailureWind
 
 var ErrAccountSessionStorageUnavailable = errors.New("account session persistence unavailable")
 
-func (acc *Account) Authenticate(ctx context.Context, db *sql.DB) error {
+func (acc *Account) Authenticate(ctx context.Context, db *sql.DB, ip string) error {
 	if db == nil {
 		return serviceerrors.LoginService(
 			serviceerrors.CodeDatabaseUnavailable,
@@ -71,7 +72,8 @@ func (acc *Account) Authenticate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
-	failureKeys := loginFailureKeys(acc.Email, candidates)
+	ip = failureSource(ip)
+	failureKeys := loginFailureKeys(acc.Email, ip, candidates)
 	for _, key := range failureKeys {
 		if loginFailures.Blocked(key) {
 			return serviceerrors.TooManyLoginAttempts(loginFailureWindow)
@@ -98,7 +100,7 @@ func (acc *Account) Authenticate(ctx context.Context, db *sql.DB) error {
 		default:
 			continue
 		}
-		loginFailures.Reset(accountFailureKey(row.id))
+		loginFailures.Reset(accountFailureKey(row.id, ip))
 		acc.ID, acc.Type, acc.PremDays, acc.LastDay = row.id, row.accountType, row.premDays, row.lastDay
 		return nil
 	}
@@ -107,21 +109,30 @@ func (acc *Account) Authenticate(ctx context.Context, db *sql.DB) error {
 	return sql.ErrNoRows
 }
 
+// Keyed per source so a stranger's failures lock only the stranger, never the owner.
 // The accounts collation ignores case and accents, so every spelling that reaches an account shares its id's bucket.
-func loginFailureKeys(login string, candidates []accountRow) []string {
+func loginFailureKeys(login, ip string, candidates []accountRow) []string {
 	if len(candidates) == 0 {
 		sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(login))))
-		return []string{"login:" + string(sum[:])}
+		return []string{"login:" + string(sum[:]) + "|" + ip}
 	}
 	keys := make([]string, len(candidates))
 	for i, row := range candidates {
-		keys[i] = accountFailureKey(row.id)
+		keys[i] = accountFailureKey(row.id, ip)
 	}
 	return keys
 }
 
-func accountFailureKey(id uint32) string {
-	return "account:" + strconv.FormatUint(uint64(id), 10)
+func accountFailureKey(id uint32, ip string) string {
+	return "account:" + strconv.FormatUint(uint64(id), 10) + "|" + ip
+}
+
+// One IPv6 host usually holds a whole /64, so a per-address key would let it rotate past the limit.
+func failureSource(ip string) string {
+	if parsed := net.ParseIP(ip); parsed != nil && parsed.To4() == nil {
+		return parsed.Mask(net.CIDRMask(64, 128)).String()
+	}
+	return ip
 }
 
 type accountRow struct {
@@ -220,9 +231,9 @@ func (acc *Account) GetPremiumTime() uint64 {
 	return 0
 }
 
-func LoadAccount(ctx context.Context, email string, password string, DB *sql.DB) (*Account, error) {
+func LoadAccount(ctx context.Context, email string, password string, ip string, DB *sql.DB) (*Account, error) {
 	acc := Account{Email: email, Password: password}
-	if err := acc.Authenticate(ctx, DB); err != nil {
+	if err := acc.Authenticate(ctx, DB, ip); err != nil {
 		return nil, classifyAuthenticationError(err)
 	}
 

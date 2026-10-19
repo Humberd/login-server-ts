@@ -52,11 +52,15 @@ You can also download our docker image and apply the environment variables to yo
 |`LOGIN_GRPC_PORT`    | `login grpc port`                    |
 |`RATE_LIMITER_BURST` | `rate limiter same request burst`    |
 |`RATE_LIMITER_RATE`  | `rate limit request per sec per user`|
+|`LOGIN_TRUSTED_PROXIES`| `csv of proxy IPs/CIDRs allowed to set X-Forwarded-For; set it behind a reverse proxy, or every client shares the proxy's address` |
 |`SERVER_IP`          | `game server IP address`             |
 |`SERVER_LOCATION`    | `game server location`               |
 |`SERVER_NAME`        | `game server name; the official client sends this exact value plus newline before the first world-login packet` |
 |`SERVER_PORT`        | `game server game port`              |
 |`VOCATIONS`          | `game vocation list csv (a,b,c)`     |
+
+**Failed logins**  
+10 failed logins in 15 minutes for one account (or unknown login) from one source lock that pair for the rest of the 15 minutes (`TOO_MANY_LOGIN_ATTEMPTS`, code 4). The source is the client IP, or its /64 for IPv6, so someone guessing a password locks only themselves; the owner still logs in from their own address. A successful login clears its pair.
 
 **Tests**  
 `go test ./...`

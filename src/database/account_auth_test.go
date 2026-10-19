@@ -23,6 +23,8 @@ const (
 	testArgon2id  = "$argon2id$v=19$m=19456,t=2,p=1$TTNWdy9DOVcwVk5ISTFOTg$YEpzDGgMg4xBoYHgC58SVkZP+svlUAq8+sp3yXoCFcY"
 	selectAccount = "SELECT id, type, premdays, lastday, password FROM accounts WHERE email = ? OR name = ?"
 	upgradeHash   = "UPDATE accounts SET password = ? WHERE id = ? AND password = ?"
+	testIP        = "203.0.113.7"
+	otherIP       = "198.51.100.2"
 )
 
 type argon2idArg struct{}
@@ -61,7 +63,7 @@ func TestLoadAccount_Argon2idMatch(t *testing.T) {
 	db, mock := newMockDB(t)
 	expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 5, 3, 100, testArgon2id))
 
-	acc, err := LoadAccount(context.Background(), "tester", "test", db)
+	acc, err := LoadAccount(context.Background(), "tester", "test", testIP, db)
 
 	require.NoError(t, err)
 	assert.Equal(t, uint32(7), acc.ID)
@@ -77,7 +79,7 @@ func TestLoadAccount_LegacySHA1UpgradesHash(t *testing.T) {
 		WithArgs(argon2idArg{}, 1, godSHA1).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	acc, err := LoadAccount(context.Background(), "@god", "god", db)
+	acc, err := LoadAccount(context.Background(), "@god", "god", testIP, db)
 
 	require.NoError(t, err)
 	assert.Equal(t, uint32(1), acc.ID)
@@ -90,7 +92,7 @@ func TestLoadAccount_LegacyUpgradeFailureStillLogsIn(t *testing.T) {
 		WithArgs(argon2idArg{}, 1, godSHA1).
 		WillReturnError(errors.New("read-only"))
 
-	acc, err := LoadAccount(context.Background(), "@god", "god", db)
+	acc, err := LoadAccount(context.Background(), "@god", "god", testIP, db)
 
 	require.NoError(t, err)
 	assert.Equal(t, uint32(1), acc.ID)
@@ -101,7 +103,7 @@ func TestLoadAccount_WrongPassword(t *testing.T) {
 		db, mock := newMockDB(t)
 		expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, stored))
 
-		acc, err := LoadAccount(context.Background(), "tester", "wrong", db)
+		acc, err := LoadAccount(context.Background(), "tester", "wrong", testIP, db)
 
 		assert.Nil(t, acc)
 		assertInvalidCredentials(t, err)
@@ -112,7 +114,7 @@ func TestLoadAccount_UnknownAccount(t *testing.T) {
 	db, mock := newMockDB(t)
 	expectAccountQuery(mock, "nobody").WillReturnRows(accountRows())
 
-	acc, err := LoadAccount(context.Background(), "nobody", "test", db)
+	acc, err := LoadAccount(context.Background(), "nobody", "test", testIP, db)
 
 	assert.Nil(t, acc)
 	assertInvalidCredentials(t, err)
@@ -124,7 +126,7 @@ func TestLoadAccount_EmailOfOneNameOfAnother(t *testing.T) {
 		AddRow(7, 1, 0, 0, godSHA1).
 		AddRow(8, 1, 0, 0, testArgon2id))
 
-	acc, err := LoadAccount(context.Background(), "shared", "test", db)
+	acc, err := LoadAccount(context.Background(), "shared", "test", testIP, db)
 
 	require.NoError(t, err)
 	assert.Equal(t, uint32(8), acc.ID)
@@ -134,7 +136,7 @@ func TestLoadAccount_QueryError(t *testing.T) {
 	db, mock := newMockDB(t)
 	expectAccountQuery(mock, "tester").WillReturnError(errors.New("connection refused"))
 
-	_, err := LoadAccount(context.Background(), "tester", "test", db)
+	_, err := LoadAccount(context.Background(), "tester", "test", testIP, db)
 
 	publicErr, ok := serviceerrors.FromError(err)
 	require.True(t, ok)
@@ -163,7 +165,7 @@ func TestLoadAccount_BusyWhenHashSlotsAreTaken(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
-	acc, err := LoadAccount(ctx, "tester", "test", db)
+	acc, err := LoadAccount(ctx, "tester", "test", testIP, db)
 
 	assert.Nil(t, acc)
 	publicErr, ok := serviceerrors.FromError(err)
@@ -177,34 +179,40 @@ func assertTooManyLoginAttempts(t *testing.T, err error) {
 	assert.Equal(t, serviceerrors.CodeTooManyLoginAttempts, publicErr.Code)
 }
 
-func TestLoadAccount_LocksAccountAfterRepeatedFailures(t *testing.T) {
+func TestLoadAccount_LocksOnlyTheFailingSource(t *testing.T) {
 	db, mock := newMockDB(t)
 	for range maxLoginFailures {
 		expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
-		_, err := LoadAccount(context.Background(), "tester", "wrong", db)
+		_, err := LoadAccount(context.Background(), "tester", "wrong", testIP, db)
 		assertInvalidCredentials(t, err)
 	}
 
 	expectAccountQuery(mock, "TÉSTER").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
-	acc, err := LoadAccount(context.Background(), "TÉSTER", "test", db)
+	acc, err := LoadAccount(context.Background(), "TÉSTER", "test", testIP, db)
 
 	assert.Nil(t, acc)
 	assertTooManyLoginAttempts(t, err)
+
+	expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
+	acc, err = LoadAccount(context.Background(), "tester", "test", otherIP, db)
+
+	require.NoError(t, err, "the owner on another address still logs in")
+	assert.Equal(t, uint32(7), acc.ID)
 }
 
 func TestLoadAccount_SuccessResetsFailures(t *testing.T) {
 	db, mock := newMockDB(t)
 	for range maxLoginFailures - 1 {
 		expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
-		_, err := LoadAccount(context.Background(), "tester", "wrong", db)
+		_, err := LoadAccount(context.Background(), "tester", "wrong", testIP, db)
 		assertInvalidCredentials(t, err)
 	}
 	expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
-	_, err := LoadAccount(context.Background(), "tester", "test", db)
+	_, err := LoadAccount(context.Background(), "tester", "test", testIP, db)
 	require.NoError(t, err)
 
 	expectAccountQuery(mock, "tester").WillReturnRows(accountRows().AddRow(7, 1, 0, 0, testArgon2id))
-	_, err = LoadAccount(context.Background(), "tester", "wrong", db)
+	_, err = LoadAccount(context.Background(), "tester", "wrong", testIP, db)
 	assertInvalidCredentials(t, err)
 }
 
@@ -212,12 +220,24 @@ func TestLoadAccount_LocksUnknownLoginLikeAnAccount(t *testing.T) {
 	db, mock := newMockDB(t)
 	for range maxLoginFailures {
 		expectAccountQuery(mock, "nobody").WillReturnRows(accountRows())
-		_, err := LoadAccount(context.Background(), "nobody", "test", db)
+		_, err := LoadAccount(context.Background(), "nobody", "test", testIP, db)
 		assertInvalidCredentials(t, err)
 	}
 
 	expectAccountQuery(mock, " NoBody ").WillReturnRows(accountRows())
-	_, err := LoadAccount(context.Background(), " NoBody ", "test", db)
+	_, err := LoadAccount(context.Background(), " NoBody ", "test", testIP, db)
 
 	assertTooManyLoginAttempts(t, err)
+
+	expectAccountQuery(mock, "nobody").WillReturnRows(accountRows())
+	_, err = LoadAccount(context.Background(), "nobody", "test", otherIP, db)
+
+	assertInvalidCredentials(t, err)
+}
+
+func TestFailureSourceGroupsIPv6By64(t *testing.T) {
+	assert.Equal(t, testIP, failureSource(testIP))
+	assert.Equal(t, "2001:db8:1:2::", failureSource("2001:db8:1:2:aaaa:bbbb:cccc:dddd"))
+	assert.Equal(t, failureSource("2001:db8:1:2::1"), failureSource("2001:db8:1:2::2"))
+	assert.Equal(t, "", failureSource(""))
 }

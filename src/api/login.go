@@ -8,9 +8,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/opentibiabr/login-server/src/api/models"
 	"github.com/opentibiabr/login-server/src/database"
+	grpc_login_server "github.com/opentibiabr/login-server/src/grpc"
 	"github.com/opentibiabr/login-server/src/grpc/login_proto_messages"
 	"github.com/opentibiabr/login-server/src/logger"
 	"github.com/opentibiabr/login-server/src/serviceerrors"
+	"google.golang.org/grpc/metadata"
 )
 
 const temporaryErrorCode = 2
@@ -43,7 +45,7 @@ func (_api *Api) login(c *gin.Context) {
 		grpcClient := login_proto_messages.NewLoginServiceClient(_api.GrpcConnection)
 
 		res, err := grpcClient.Login(
-			context.Background(),
+			metadata.AppendToOutgoingContext(context.Background(), grpc_login_server.ClientIPMetadataKey, c.ClientIP()),
 			&login_proto_messages.LoginRequest{Email: payload.Email, Password: payload.Password},
 		)
 

@@ -15,11 +15,13 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/opentibiabr/login-server/src/api/models"
 	"github.com/opentibiabr/login-server/src/configs"
+	grpc_login_server "github.com/opentibiabr/login-server/src/grpc"
 	"github.com/opentibiabr/login-server/src/grpc/login_proto_messages"
 	"github.com/opentibiabr/login-server/src/serviceerrors"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -281,13 +283,24 @@ func (svc *testLoginService) Login(_ context.Context, _ *login_proto_messages.Lo
 	return svc.response, nil
 }
 
-func newInMemoryLoginClient(t *testing.T, response *login_proto_messages.LoginResponse) *grpc.ClientConn {
+type clientIPRecordingLoginService struct {
+	login_proto_messages.UnimplementedLoginServiceServer
+	clientIPs chan []string
+}
+
+func (svc *clientIPRecordingLoginService) Login(ctx context.Context, _ *login_proto_messages.LoginRequest) (*login_proto_messages.LoginResponse, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	svc.clientIPs <- md.Get(grpc_login_server.ClientIPMetadataKey)
+	return &login_proto_messages.LoginResponse{Error: &login_proto_messages.Error{Code: 3}}, nil
+}
+
+func newInMemoryLoginClient(t *testing.T, service login_proto_messages.LoginServiceServer) *grpc.ClientConn {
 	t.Helper()
 
 	listener := bufconn.Listen(1024 * 1024)
 
 	grpcServer := grpc.NewServer()
-	login_proto_messages.RegisterLoginServiceServer(grpcServer, &testLoginService{response: response})
+	login_proto_messages.RegisterLoginServiceServer(grpcServer, service)
 	go func() {
 		_ = grpcServer.Serve(listener)
 	}()
@@ -358,12 +371,12 @@ func Test_loginHandlerReturnsSessionFlowVariants(t *testing.T) {
 			endpoints := []string{"/", "/login.php"}
 
 			api := &Api{
-				GrpcConnection: newInMemoryLoginClient(t, &login_proto_messages.LoginResponse{
+				GrpcConnection: newInMemoryLoginClient(t, &testLoginService{response: &login_proto_messages.LoginResponse{
 					Session: &login_proto_messages.Session{
 						SessionKey: tt.sessionKey,
 					},
 					PlayData: &login_proto_messages.PlayData{},
-				}),
+				}}),
 			}
 			if tt.authType != "" {
 				tmpDir := t.TempDir()
@@ -401,6 +414,30 @@ func Test_loginHandlerReturnsSessionFlowVariants(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func Test_loginHandlerForwardsClientIP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	service := &clientIPRecordingLoginService{clientIPs: make(chan []string, 1)}
+	router := gin.New()
+	router.POST("/login", (&Api{GrpcConnection: newInMemoryLoginClient(t, service)}).login)
+
+	requestBody, _ := json.Marshal(models.RequestPayload{
+		Type:     "login",
+		Email:    "user@example.com",
+		Password: "wrong",
+	})
+	request := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBuffer(requestBody))
+	request.RemoteAddr = "203.0.113.7:51234"
+	router.ServeHTTP(httptest.NewRecorder(), request)
+
+	select {
+	case clientIPs := <-service.clientIPs:
+		assert.Equal(t, []string{"203.0.113.7"}, clientIPs)
+	default:
+		t.Fatal("the login service was not called")
 	}
 }
 
