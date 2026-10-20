@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opentibiabr/login-server/src/api/models"
@@ -264,6 +265,32 @@ func Test_authTypeIsPassword(t *testing.T) {
 	manager, err := configs.NewLuaConfigManager(configPath)
 	assert.Nil(t, err)
 	assert.True(t, (&Api{LuaConfigManager: manager}).authTypeIsPassword())
+}
+
+func Test_freePremium(t *testing.T) {
+	assert.False(t, (&Api{}).freePremium())
+
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.lua")
+	err := os.WriteFile(configPath, []byte("freePremium = true\n"), 0o600)
+	assert.Nil(t, err)
+
+	manager, err := configs.NewLuaConfigManager(configPath)
+	assert.Nil(t, err)
+	assert.True(t, (&Api{LuaConfigManager: manager}).freePremium())
+}
+
+func Test_applyFreePremium(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+
+	free := models.Session{}
+	applyFreePremium(&free, now)
+	assert.True(t, free.IsPremium)
+	assert.Equal(t, uint64(1_800_000_000+86400), free.PremiumUntil)
+
+	paid := models.Session{IsPremium: true, PremiumUntil: 1_800_000_000 + 30*86400}
+	applyFreePremium(&paid, now)
+	assert.Equal(t, uint64(1_800_000_000+30*86400), paid.PremiumUntil)
 }
 
 func mapKeys(data map[string]interface{}) []string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/opentibiabr/login-server/src/api/models"
@@ -65,6 +66,9 @@ func (_api *Api) login(c *gin.Context) {
 
 		response := buildPayloadFromMessage(res, payload)
 		response.Session.SessionKey = buildSessionKey(response.Session.SessionKey, _api.authTypeIsPassword(), payload.Email, payload.Password)
+		if _api.freePremium() {
+			applyFreePremium(&response.Session, time.Now())
+		}
 		c.JSON(http.StatusOK, response)
 	default:
 		writePublicError(c, serviceerrors.LoginService(
@@ -80,6 +84,18 @@ func (api *Api) authTypeIsPassword() bool {
 		return false
 	}
 	return api.LuaConfigManager.GetString("authType") == "password"
+}
+
+func (api *Api) freePremium() bool {
+	return api != nil && api.LuaConfigManager.GetBool("freePremium")
+}
+
+// The client takes the character list's premium status from premiumuntil alone, so it has to lie in the future.
+func applyFreePremium(session *models.Session, now time.Time) {
+	session.IsPremium = true
+	if minimum := uint64(now.Unix()) + 24*60*60; session.PremiumUntil < minimum {
+		session.PremiumUntil = minimum
+	}
 }
 
 func buildSessionKey(defaultSessionKey string, authTypeIsPassword bool, email, password string) string {
