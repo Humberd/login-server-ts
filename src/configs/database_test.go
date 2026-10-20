@@ -114,3 +114,13 @@ func TestGetDBConfigs(t *testing.T) {
 		})
 	}
 }
+
+func TestGetDBConfigsReadsPoolSize(t *testing.T) {
+	t.Setenv(EnvDBMaxOpenConnsKey, "4")
+	t.Setenv(EnvDBMaxIdleConnsKey, "2")
+
+	got := GetDBConfigs()
+
+	assert.Equal(t, 4, got.MaxOpenConns)
+	assert.Equal(t, 2, got.MaxIdleConns)
+}

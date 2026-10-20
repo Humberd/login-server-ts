@@ -4,14 +4,17 @@ import (
 	"context"
 	"errors"
 	"net"
+	"regexp"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	"github.com/opentibiabr/login-server/src/configs"
 	"github.com/opentibiabr/login-server/src/database"
+	"github.com/opentibiabr/login-server/src/grpc/login_proto_messages"
 	"github.com/opentibiabr/login-server/src/serviceerrors"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/peer"
 )
@@ -181,4 +184,33 @@ func TestSourceIP(t *testing.T) {
 	assert.Equal(t, "198.51.100.2", sourceIP(forwarded(from("198.51.100.2"))), "a remote caller cannot pick its own key")
 	assert.Equal(t, "127.0.0.1", sourceIP(from("127.0.0.1")))
 	assert.Equal(t, "", sourceIP(context.Background()))
+}
+
+func TestLoginLocksTheFailingSource(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	ls := &GrpcServer{DB: db}
+	from := func(ip string) context.Context {
+		return peer.NewContext(context.Background(), &peer.Peer{Addr: &net.TCPAddr{IP: net.ParseIP(ip), Port: 50000}})
+	}
+	login := func(ctx context.Context) *login_proto_messages.Error {
+		mock.ExpectQuery(regexp.QuoteMeta("SELECT id, type, premdays, lastday, password FROM accounts WHERE email = ? OR name = ?")).
+			WillReturnRows(sqlmock.NewRows([]string{"id", "type", "premdays", "lastday", "password"}))
+		res, err := ls.Login(ctx, &login_proto_messages.LoginRequest{Email: "nobody@example.com", Password: "wrong"})
+		require.NoError(t, err)
+		return res.GetError()
+	}
+
+	for range 10 {
+		assert.Equal(t, uint32(serviceerrors.CodeInvalidCredentials), login(from("192.0.2.10")).GetCode())
+	}
+
+	locked := login(from("192.0.2.10"))
+	assert.Equal(t, uint32(serviceerrors.CodeTooManyLoginAttempts), locked.GetCode())
+	assert.Equal(t, "Too many failed login attempts. Please try again in 15 minutes.", locked.GetMessage())
+
+	assert.Equal(t, uint32(serviceerrors.CodeInvalidCredentials), login(from("192.0.2.11")).GetCode())
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
